@@ -22,6 +22,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -41,18 +42,21 @@ public class HttpServer implements HttpServerMBean {
   private final AtomicInteger requestCounter = new AtomicInteger(0);
 
   private final int port;
-  private final Path rootDir;
 
+  private final Path rootDir;
 
   /**
    * Creates HTTP server instance on give {@code port}.
    *
    * @param port the port to bind to.
-   * @param rootDir the root directory for serving files from
+   * @param rootDir the root directory for serving files from.
    */
   public HttpServer(int port, Path rootDir) {
+    if (port <= 0) {
+      throw new IllegalArgumentException("port must be greater than 0");
+    }
     this.port = port;
-    this.rootDir = rootDir;
+    this.rootDir = Objects.requireNonNull(rootDir);
   }
 
   /**
