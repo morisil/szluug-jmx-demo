@@ -17,19 +17,12 @@
  */
 package com.xemantic.demo.szluug.jmx;
 
-import java.io.BufferedReader;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.OutputStream;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Arrays;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
-
-import com.google.common.io.ByteStreams;
 
 /**
  * The simplest possible HTTP daemon which serves all the filesystem
@@ -48,101 +41,132 @@ public class HttpServer implements HttpServerMBean {
   private final AtomicInteger requestCounter = new AtomicInteger(0);
 
   private final int port;
+  private final Path rootDir;
 
 
   /**
    * Creates HTTP server instance on give {@code port}.
    *
    * @param port the port to bind to.
+   * @param rootDir the root directory for serving files from
    */
-  public HttpServer(int port) {
+  public HttpServer(int port, Path rootDir) {
     this.port = port;
+    this.rootDir = rootDir;
   }
 
   /**
    * Starts the server.
    */
   public void start() {
-    (new Thread("RequestDispatcher") {
-      @Override
-      public void run() {
-        try (ServerSocket serverSocket = new ServerSocket(port)) {
-          while (true) {
-            handleClient(serverSocket.accept());
-          }
-        } catch (IOException e) {
-          e.printStackTrace();
-        }
-      }
-    }).start();
+    (new Thread(this::dispatchRequests, "RequestDispatcher")).start();
   }
 
-  private void handleClient(final Socket clientSocket) {
-    requestCounter.incrementAndGet();
-    (new Thread("Handler-" + threadCounter.getAndIncrement()) {
-      @Override
-      public void run() {
-        System.out.println("Client connected, starting thread: " + getName());
-        try (Socket socket = clientSocket) {
-          try (InputStream in = socket.getInputStream()) {
-            String[] request = readRequest(in);
-            System.out.println(Arrays.asList(request));
-            if (!("GET".equals(request[0]) || (request.length >= 2))) {
-              respondWithError(socket, "Invalid request: " + request, 400);
-            } else {
-              sendFile(request[1], clientSocket);
-            }
-          }
-        } catch (IOException e) {
-          e.printStackTrace();
-        } finally {
-          threadCounter.decrementAndGet();
-        }
-      }
-    }).start();
+  private void dispatchRequests() {
+    try (ServerSocket socket = new ServerSocket(port)) {
+      handleConnections(socket);
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
   }
 
-  private String[] readRequest(InputStream in) throws IOException {
+  private void handleConnections(ServerSocket socket) {
+    while (true) {
+      waitForConnection(socket);
+    }
+  }
+
+  private void waitForConnection(ServerSocket socket) {
+    try {
+      handleClient(socket.accept());
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  private void handleClient(Socket socket) {
+    int requestNumber = requestCounter.incrementAndGet();
+    System.out.println("Client connected, starting handler thread: " + requestNumber);
+    (new Thread(() -> handleProtocol(socket), "Handler-" + requestNumber)).start();
+  }
+
+  private void handleProtocol(Socket clientSocket) {
+    threadCounter.incrementAndGet();
+    try (Socket socket = clientSocket) { // we want this thread to close the socket after handling the request
+      process(socket);
+    } catch (IOException e) {
+      e.printStackTrace();
+    } finally {
+      threadCounter.decrementAndGet();
+    }
+  }
+
+  private void process(Socket socket) throws IOException {
+    try (InputStream in = socket.getInputStream()) {
+      String request = readRequest(in);
+      String[] split = request.split(" ");
+      System.out.println(request); // debugging
+      if (!("GET".equals(split[0]) || (split.length >= 2))) {
+        sendInvalidRequest(socket, request);
+      } else {
+        sendFile(split[1].replaceAll("^/", ""), socket);
+      }
+    }
+  }
+
+  private String readRequest(InputStream in) throws IOException {
     BufferedReader input = new BufferedReader(new InputStreamReader(in));
-    return input.readLine().split(" ");
+    return input.readLine();
   }
 
   private void sendFile(String file, Socket socket) throws IOException {
-    try (FileInputStream in = new FileInputStream(file)) {
-      try (OutputStream out = socket.getOutputStream()) {
-        writeHeaders(out, 200, "OK");
-        ByteStreams.copy(in, out);
+    Path path = rootDir.resolve(file);
+    try (OutputStream out = socket.getOutputStream()) {
+      if (path.toFile().exists()) {
+        write(out, 200, "OK");
+        Files.copy(path, out);
+      } else {
+        write(out, 404, "No such file: " + file);
       }
-    } catch (FileNotFoundException e) {
-      respondWithError(socket, e.getMessage(), 404);
     }
   }
 
-  private void respondWithError(Socket socket, String error, int code)
+  private void sendInvalidRequest(Socket socket, String request)
       throws IOException {
 
     try (OutputStream out = socket.getOutputStream()) {
-      writeHeaders(out, code, error);
-      out.write(error.getBytes());
+      write(out, 400, "Invalid request: " + request);
     }
   }
 
-  private void writeHeaders(OutputStream out, int status, String reason)
+  private void write(OutputStream out, int code, String reason)
       throws IOException {
 
-    out.write(("HTTP/1.1 " + status + " " + reason).getBytes());
-    out.write("Content-Type: text/plain\n".getBytes());
-    out.write("\n".getBytes());
+    PrintWriter writer = new PrintWriter(out, true);
+    writer.println("HTTP/1.1 " + code + " " + reason);
+    writer.println("Content-Type: text/plain\n");
+    writer.println();
+    if (code != 200) {
+      writer.println(reason);
+    }
   }
 
+  /** {@inheritDoc} */
   @Override
-  public int getRequestCounter() {
+  public int getRequestCount() {
     return requestCounter.get();
   }
 
+  /** {@inheritDoc} */
   @Override
-  public void resetRequestCounter(int value) {
+  public void setRequestCount(int value) {
     requestCounter.set(value);
+  }
+
+  /** {@inheritDoc} */
+  @Override
+  public int getThreadCount() {
+    return threadCounter.get();
   }
 
 }

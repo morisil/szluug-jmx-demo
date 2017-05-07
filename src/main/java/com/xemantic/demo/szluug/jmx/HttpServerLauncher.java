@@ -17,13 +17,10 @@
  */
 package com.xemantic.demo.szluug.jmx;
 
+import java.io.File;
 import java.lang.management.ManagementFactory;
 
-import javax.management.InstanceAlreadyExistsException;
-import javax.management.MBeanRegistrationException;
 import javax.management.MBeanServer;
-import javax.management.MalformedObjectNameException;
-import javax.management.NotCompliantMBeanException;
 import javax.management.ObjectName;
 
 /**
@@ -36,20 +33,20 @@ public class HttpServerLauncher {
   /**
    * Creates the {@link HttpServer} instance and starts it.
    *
-   * @param args the CLI arguments, ignored now.
-   * @throws MalformedObjectNameException in case of JMX related error.
-   * @throws InstanceAlreadyExistsException in case of JMX related error.
-   * @throws MBeanRegistrationException in case of JMX related error.
-   * @throws NotCompliantMBeanException in case of JMX related error.
+   * @param args one integer value denoting HTTP server port.
+   * @throws Exception in case of JMX related error.
    */
-  public static void main(String[] args)
-      throws
-        MalformedObjectNameException,
-        InstanceAlreadyExistsException,
-        MBeanRegistrationException,
-        NotCompliantMBeanException {
-
-    final HttpServer httpServer = new HttpServer(12345);
+  public static void main(String[] args) throws Exception {
+    if (args.length < 2) {
+      System.out.println("please specify port of the HTTP server and root dir");
+      System.exit(1);
+    }
+    int port = Integer.parseInt(args[0]);
+    File rootDir = new File(args[1]);
+    if (!rootDir.exists()) {
+      System.out.println("root dir doesn't exist: " + rootDir.getAbsolutePath());
+    }
+    HttpServer httpServer = new HttpServer(port, rootDir.toPath());
     httpServer.start();
     MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
     ObjectName name = new ObjectName("org.szluug:type=HttpServerMBean");

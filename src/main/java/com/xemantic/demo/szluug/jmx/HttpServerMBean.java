@@ -27,15 +27,22 @@ public interface HttpServerMBean {
   /**
    * Returns number of HTTP client request since start of the server.
    *
-   * @return the request counter.
+   * @return the request count.
    */
-  int getRequestCounter();
+  int getRequestCount();
 
   /**
    * Resets the request counter with given {@code value}.
    *
    * @param value the value of request counter to set.
    */
-  void resetRequestCounter(int value);
+  void setRequestCount(int value);
+
+  /**
+   * Returns number of concurrent threads handling client requests.
+   *
+   * @return the thread count.
+   */
+  int getThreadCount();
 
 }
